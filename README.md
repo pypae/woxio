@@ -41,6 +41,7 @@ When a membership is created in Wodify, an invoice is **automatically generated*
 | Platform      | Field           | Stores            |
 | ------------- | --------------- | ----------------- |
 | Bexio Invoice | `api_reference` | Wodify invoice ID |
+| Bexio Contact | `remarks`       | Wodify client ID (optional) |
 
 This allows:
 
@@ -57,9 +58,25 @@ sync_invoices()
 ├── For each Wodify invoice:
 │   ├── Check Bexio: GET /2.0/kb_invoice?api_reference={wodify_invoice_id}
 │   ├── If no Bexio invoice exists:
+│   │   ├── GET Wodify client: /v1/clients/{client_id}
+│   │   ├── Search Bexio contact: POST /2.0/contact/search (by email)
+│   │   ├── If no Bexio contact exists:
+│   │   │   ├── POST /3.0/fictional_users (create fictional user for customer)
+│   │   │   └── POST /2.0/contact (create contact with fictional user_id)
 │   │   ├── Map Wodify invoice data to Bexio invoice fields
-│   │   ├── POST /2.0/kb_invoice (create draft with api_reference=wodify_invoice_id)
+│   │   └── POST /2.0/kb_invoice (create draft with api_reference=wodify_invoice_id)
 ```
+
+### Fictional Users
+
+When creating a new Bexio contact, a **fictional user** must first be created. In Bexio:
+- `owner_id` = The real Bexio account user who manages the record (from config)
+- `user_id` = The "responsible user" for the contact - must reference a user object
+
+For imported contacts (customers), we create a **fictional user** to serve as the `user_id`:
+- Fictional users are pseudo-users that don't consume Bexio licenses
+- Each new contact gets its own fictional user with matching name/email
+- This ensures proper assignment without using real Bexio user accounts
 
 ### Flow 2: Bexio Payment → Wodify Update (TODO)
 
@@ -75,7 +92,56 @@ Future options:
 ## Idempotency Guarantees
 
 - **Invoice creation**: Check `api_reference` before creating → prevents duplicates
+- **Contact creation**: Search by email before creating → prevents duplicate contacts
 - **Polling window**: Use date filters to limit query scope without needing timestamps in state
+
+## Field Mappings
+
+### Client/Contact Mapping (Wodify Client → Bexio Contact)
+
+| Wodify Field    | Bexio Field        | Notes                                           |
+| --------------- | ------------------ | ----------------------------------------------- |
+| `id`            | `remarks`          | Stored as "Wodify Client ID: {id}" for reference |
+| `last_name`     | `name_1`           | Required - last name for persons                 |
+| `first_name`    | `name_2`           | First name for persons                           |
+| `email`         | `mail`             | **Used as lookup key** for existing contacts     |
+| `phone`         | `phone_mobile`     | Mobile phone                                     |
+| `address_1`     | `street_name`      | Street address                                   |
+| `postal_code`   | `postcode`         | Postal/ZIP code                                  |
+| `city`          | `city`             | City name                                        |
+| —               | `contact_type_id`  | Always `2` (Person)                              |
+| —               | `user_id`          | **From created fictional user** (see above)      |
+| —               | `owner_id`         | Bexio owner ID (from config)                     |
+
+**Lookup Strategy:**
+1. Search Bexio for contact with matching `mail` (exact match)
+2. If found → use existing `contact_id`
+3. If not found → create new contact with mapped fields
+
+### Invoice Mapping (Wodify Invoice → Bexio Invoice)
+
+| Wodify Field        | Bexio Field        | Notes                                    |
+| ------------------- | ------------------ | ---------------------------------------- |
+| `id`                | `api_reference`    | **Used as idempotency key**              |
+| `invoice_number`    | `title`            | Invoice title/description                |
+| `client_id`         | `contact_id`       | Via client lookup (see above)            |
+| `payment_due`       | `is_valid_to`      | Payment due date                         |
+| `created.created_on`| `is_valid_from`    | Invoice date                             |
+| `final_charge`      | (position amount)  | Total amount (mapped to line items)      |
+| —                   | `user_id`          | Bexio user ID (from config)              |
+| —                   | `bank_account_id`  | Bexio bank account (from config)         |
+| —                   | `mwst_type`        | VAT type (0 = included)                  |
+
+### Invoice Line Items (Wodify → Bexio Positions)
+
+| Wodify Field    | Bexio Field    | Notes                               |
+| --------------- | -------------- | ----------------------------------- |
+| (description)   | `text`         | Line item description               |
+| (amount)        | `amount`       | Quantity                            |
+| (unit_price)    | `unit_price`   | Price per unit                      |
+| —               | `type`         | `KbPositionCustom` for custom items |
+| —               | `account_id`   | Revenue account (from config)       |
+| —               | `tax_id`       | Tax rate ID (from config)           |
 
 ## API Endpoints
 
@@ -92,13 +158,15 @@ Future options:
 
 - Base URL: `https://api.bexio.com`
 - Documentation: `https://docs.bexio.com`
-- Auth: `Authorization: Bearer {token}`
+- Auth: `Authorization: Bearer {token}`, get your token here: https://developer.bexio.com/pat/ 
 - Endpoints:
   - `GET /2.0/kb_invoice` - List invoices (supports `api_reference` filter)
   - `POST /2.0/kb_invoice` - Create invoice
   - `POST /2.0/kb_invoice/{id}/issue` - Issue invoice
   - `GET /2.0/kb_invoice/{id}/payment` - Get payments for invoice
   - `GET /2.0/contact` - Get contacts (for customer lookup)
+  - `POST /2.0/contact` - Create contact
+  - `POST /3.0/fictional_users` - Create fictional user (for contact user_id)
 
 ## Project Structure
 
@@ -106,25 +174,31 @@ Future options:
 woxio/
 ├── src/woxio/           # Main package
 │   ├── __init__.py
-│   ├── config.py        # Configuration from environment
-│   ├── main.py          # Cloud Function entry point & sync logic
+│   ├── config.py        # Configuration (WodifyConfig, BexioConfig, SyncConfig)
+│   ├── main.py          # Cloud Function entry point
+│   ├── sync.py          # InvoiceSyncService - orchestrates the sync workflow
+│   ├── mapping.py       # WodifyToBexioMapper - pure data transformation
 │   ├── wodify/          # Wodify API client package
 │   │   ├── __init__.py
 │   │   ├── client.py    # WodifyClient class
-│   │   └── models.py    # WodifyInvoice, WodifyInvoiceItem
+│   │   └── models.py    # WodifyInvoice, WodifyClient
 │   └── bexio/           # Bexio API client package
 │       ├── __init__.py
 │       ├── client.py    # BexioClient class
-│       └── models.py    # BexioInvoice, BexioContact
+│       └── models.py    # BexioInvoice, BexioContact, BexioFictionalUser
 ├── tests/               # Test suite
 │   ├── conftest.py      # Pytest configuration
+│   ├── unit/            # Unit tests
+│   │   ├── test_mapping.py
+│   │   └── test_sync.py
 │   └── integration/     # Integration tests against live APIs
 │       ├── test_wodify.py
 │       └── test_bexio.py
+├── scripts/             # One-off scripts for testing
 ├── .env                 # Local environment variables (not committed)
 ├── .env.template        # Template for environment variables
 ├── pyproject.toml       # Dependencies and tool config
-└── AGENTS.md            # This file
+└── README.md            # This file
 ```
 
 ## Local Development
@@ -163,44 +237,3 @@ gcloud scheduler jobs create http sync-invoices-job \
   --schedule="*/15 * * * *" \
   --uri="https://REGION-PROJECT.cloudfunctions.net/sync_invoices"
 ```
-
-## TODO
-
-- [x] ~~Verify Wodify API endpoints~~ → Use `GET /v1/financials/invoices`
-- [x] ~~Identify Wodify field for storing Bexio invoice ID~~ → Not needed (one-way sync)
-- [ ] Define field mapping: Wodify invoice → Bexio invoice
-- [ ] Implement Wodify client (`GET /v1/financials/invoices`)
-- [ ] Implement Bexio client (create invoice, issue invoice)
-- [ ] Add error handling and retries
-- [ ] Add logging/monitoring
-- [ ] Deploy to GCP
-- [ ] **Future**: Investigate Bexio → Wodify payment sync (requires Wodify API update or Workflows)
-
-## API Notes
-
-### Bexio `api_reference` field
-
-- Available on invoice objects
-- Stores Wodify invoice ID for linking
-- Used for idempotency: `GET /2.0/kb_invoice?api_reference={wodify_invoice_id}`
-
-### Wodify Invoice API
-
-- `GET /v1/financials/invoices` - Retrieves invoices
-- Invoices are **read-only** via API (cannot update payment status)
-- Invoices are auto-generated when memberships are created
-
-### OpenAPI Specifications
-
-- **Bexio**: Does not currently provide an OpenAPI definition (per their docs)
-- **Wodify**: No public OpenAPI spec found; docs require login
-- API clients must be implemented by manually referencing their documentation
-
-## Limitations
-
-1. **One-way sync only**: Wodify invoices cannot be updated via API
-
-   - When a Bexio invoice is paid, we cannot automatically mark the Wodify invoice as paid
-   - This requires manual reconciliation in Wodify or a future API enhancement
-
-2. **Wodify API documentation**: Requires login to access full docs at `docs.wodify.com`

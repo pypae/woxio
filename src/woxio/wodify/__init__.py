@@ -2,6 +2,7 @@
 
 from .client import WodifyClient
 from .models import (
+    WodifyClient as WodifyClientModel,
     WodifyCreated,
     WodifyInvoice,
     WodifyInvoicesResponse,
@@ -10,6 +11,7 @@ from .models import (
 
 __all__ = [
     "WodifyClient",
+    "WodifyClientModel",
     "WodifyCreated",
     "WodifyInvoice",
     "WodifyInvoicesResponse",

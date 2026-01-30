@@ -11,6 +11,7 @@ class BexioInvoiceItem(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
+    type: str = "KbPositionCustom"  # KbPositionCustom, KbPositionArticle, KbPositionText, etc.
     amount: Decimal
     unit_price: Decimal
     text: str
@@ -25,27 +26,69 @@ class BexioInvoice(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     id: int | None = None
+    document_nr: str | None = None  # Bexio-generated invoice number (e.g., "RE-05081")
     contact_id: int
-    title: str
+    user_id: int
+    bank_account_id: int | None = None
+    title: str | None = None
     positions: list[BexioInvoiceItem] = Field(default_factory=list)
     api_reference: str | None = None  # For storing Wodify invoice ID
     is_valid_from: date | None = None
     is_valid_to: date | None = None
     mwst_type: int = 0  # 0 = included, 1 = excluded, 2 = exempt
     mwst_is_net: bool = True
-    kb_item_status_id: int = 7  # 7 = Draft
 
 
-class BexioContact(BaseModel):
-    """A Bexio contact (customer)."""
+class BexioFictionalUser(BaseModel):
+    """A Bexio fictional user.
+
+    Fictional users are pseudo-users that can be assigned as the responsible
+    user for contacts without being actual Bexio account users. This is useful
+    for assigning contacts to the customers they represent.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
-    id: int
-    name_1: str = ""
-    name_2: str | None = None
+    id: int | None = None  # None when creating a new fictional user
+    salutation_type: str = "male"  # "male" or "female"
+    first_name: str
+    last_name: str
+    email: str
+
+
+class BexioContact(BaseModel):
+    """A Bexio contact (customer).
+
+    For persons (contact_type_id=2):
+      - name_1 = Last name
+      - name_2 = First name
+
+    For companies (contact_type_id=1):
+      - name_1 = Company name
+      - name_2 = Company addition (optional)
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int | None = None  # None when creating a new contact
+    nr: str | None = None  # Auto-assigned contact number
+    contact_type_id: int = 2  # 1 = Company, 2 = Person
+    name_1: str = ""  # Last name (person) or Company name
+    name_2: str | None = None  # First name (person) or Company addition
     mail: str | None = None
-    contact_type_id: int = 1  # 1 = Company, 2 = Person
+    mail_second: str | None = None
+    phone_fixed: str | None = None
+    phone_mobile: str | None = None
+    street_name: str | None = None
+    house_number: str | None = None
+    postcode: str | None = None
+    city: str | None = None
+    country_id: int | None = None  # References Bexio country object
+    language_id: int | None = None  # References Bexio language object
+    user_id: int | None = None  # Required for creation - references Bexio user
+    owner_id: int | None = None  # Required for creation
+    remarks: str | None = None  # For storing Wodify client ID
+    updated_at: str | None = None
 
     @property
     def name(self) -> str:

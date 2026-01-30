@@ -7,6 +7,7 @@ import httpx
 
 from woxio.config import WodifyConfig
 
+from .models import WodifyClient as WodifyClientModel
 from .models import WodifyInvoice, WodifyInvoicesResponse
 
 
@@ -93,6 +94,20 @@ class WodifyClient:
         response.raise_for_status()
 
         return WodifyInvoice.model_validate(response.json())
+
+    def get_client(self, client_id: int) -> WodifyClientModel:
+        """Get a client (customer/member) by ID.
+
+        Args:
+            client_id: The Wodify client ID.
+
+        Returns:
+            The Wodify client.
+        """
+        response = self.client.get(f"/clients/{client_id}")
+        response.raise_for_status()
+
+        return WodifyClientModel.model_validate(response.json())
 
     def get_recent_invoices(
         self,
