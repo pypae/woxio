@@ -1,11 +1,11 @@
-# Woxio - Wodify ↔ Bexio Integration
+# Woxio - Wodify to Bexio Integration
 
 ## Overview
 
 Woxio syncs invoices from Wodify (fitness platform) to Bexio (accounting):
 
 1. **Wodify invoice created** (auto-generated when membership is purchased) → Create corresponding invoice in Bexio
-2. **Bexio invoice paid** → Update Wodify invoice ❌ _(not possible via API - see limitations)_
+2. ~~**Bexio invoice paid** → Update Wodify invoice~~ ❌ _(not possible via API - see limitations)_
 
 ## Architecture (Stateless)
 
@@ -33,6 +33,7 @@ Woxio syncs invoices from Wodify (fitness platform) to Bexio (accounting):
 When a membership is created in Wodify, an invoice is **automatically generated**. This means:
 
 - We poll **Wodify invoices** (not memberships)
+- Only **unpaid** invoices are synced (paid/cancelled are skipped)
 - Each Wodify invoice maps to a Bexio invoice
 - We use Bexio's `api_reference` field to store the Wodify invoice ID
 
@@ -41,11 +42,12 @@ When a membership is created in Wodify, an invoice is **automatically generated*
 | Platform      | Field           | Stores            |
 | ------------- | --------------- | ----------------- |
 | Bexio Invoice | `api_reference` | Wodify invoice ID |
-| Bexio Contact | `remarks`       | Wodify client ID (optional) |
+| Bexio Contact | `mail`          | Used as lookup key (email match) |
 
 This allows:
 
 - **Idempotency**: Before creating a Bexio invoice, check if one already exists with the Wodify invoice ID in `api_reference`
+- **Contact deduplication**: Search by email before creating → prevents duplicate contacts
 - **No external state**: The mapping is stored in Bexio itself
 
 ## Data Flow
@@ -53,17 +55,24 @@ This allows:
 ### Flow 1: Wodify Invoice → Bexio Invoice
 
 ```
+InvoiceSyncService.initialize()
+├── Fetch tax_id from active sales taxes
+├── Fetch bank_account_id by IBAN lookup
+└── Fetch revenue_account_id by account number lookup
+
 sync_invoices()
 ├── GET Wodify invoices: /v1/financials/invoices
-├── For each Wodify invoice:
+├── Filter to only UNPAID invoices
+├── For each unpaid Wodify invoice:
 │   ├── Check Bexio: GET /2.0/kb_invoice?api_reference={wodify_invoice_id}
 │   ├── If no Bexio invoice exists:
+│   │   ├── GET Wodify invoice details: /v1/financials/invoices/{id}
 │   │   ├── GET Wodify client: /v1/clients/{client_id}
 │   │   ├── Search Bexio contact: POST /2.0/contact/search (by email)
 │   │   ├── If no Bexio contact exists:
 │   │   │   ├── POST /3.0/fictional_users (create fictional user for customer)
 │   │   │   └── POST /2.0/contact (create contact with fictional user_id)
-│   │   ├── Map Wodify invoice data to Bexio invoice fields
+│   │   ├── Map Wodify invoice to Bexio invoice (using product name as title)
 │   │   └── POST /2.0/kb_invoice (create draft with api_reference=wodify_invoice_id)
 ```
 
@@ -78,7 +87,7 @@ For imported contacts (customers), we create a **fictional user** to serve as th
 - Each new contact gets its own fictional user with matching name/email
 - This ensures proper assignment without using real Bexio user accounts
 
-### Flow 2: Bexio Payment → Wodify Update (TODO)
+### Flow 2: Bexio Payment → Wodify Update
 
 ```
 ⚠️ NOT CURRENTLY POSSIBLE - Wodify invoices cannot be updated via API
@@ -101,7 +110,6 @@ Future options:
 
 | Wodify Field    | Bexio Field        | Notes                                           |
 | --------------- | ------------------ | ----------------------------------------------- |
-| `id`            | `remarks`          | Stored as "Wodify Client ID: {id}" for reference |
 | `last_name`     | `name_1`           | Required - last name for persons                 |
 | `first_name`    | `name_2`           | First name for persons                           |
 | `email`         | `mail`             | **Used as lookup key** for existing contacts     |
@@ -120,28 +128,39 @@ Future options:
 
 ### Invoice Mapping (Wodify Invoice → Bexio Invoice)
 
-| Wodify Field        | Bexio Field        | Notes                                    |
-| ------------------- | ------------------ | ---------------------------------------- |
-| `id`                | `api_reference`    | **Used as idempotency key**              |
-| `invoice_number`    | `title`            | Invoice title/description                |
-| `client_id`         | `contact_id`       | Via client lookup (see above)            |
-| `payment_due`       | `is_valid_to`      | Payment due date                         |
-| `created.created_on`| `is_valid_from`    | Invoice date                             |
-| `final_charge`      | (position amount)  | Total amount (mapped to line items)      |
-| —                   | `user_id`          | Bexio user ID (from config)              |
-| —                   | `bank_account_id`  | Bexio bank account (from config)         |
-| —                   | `mwst_type`        | VAT type (0 = included)                  |
+| Wodify Field                      | Bexio Field        | Notes                                    |
+| --------------------------------- | ------------------ | ---------------------------------------- |
+| `id`                              | `api_reference`    | **Used as idempotency key**              |
+| `invoice_details[0].product`      | `title`            | Product name from invoice details        |
+| `client_id`                       | `contact_id`       | Via client lookup (see above)            |
+| `payment_due`                     | `is_valid_to`      | Payment due date                         |
+| `created.created_on`              | `is_valid_from`    | Invoice date                             |
+| `final_charge`                    | (position amount)  | Total amount (mapped to line items)      |
+| —                                 | `user_id`          | Bexio owner ID (from config)             |
+| —                                 | `bank_account_id`  | **Auto-fetched** by IBAN lookup          |
+| —                                 | `mwst_type`        | `0` (VAT inclusive)                      |
+| —                                 | `mwst_is_net`      | `false` (prices are gross)               |
 
 ### Invoice Line Items (Wodify → Bexio Positions)
 
-| Wodify Field    | Bexio Field    | Notes                               |
-| --------------- | -------------- | ----------------------------------- |
-| (description)   | `text`         | Line item description               |
-| (amount)        | `amount`       | Quantity                            |
-| (unit_price)    | `unit_price`   | Price per unit                      |
-| —               | `type`         | `KbPositionCustom` for custom items |
-| —               | `account_id`   | Revenue account (from config)       |
-| —               | `tax_id`       | Tax rate ID (from config)           |
+| Wodify Field                 | Bexio Field    | Notes                               |
+| ---------------------------- | -------------- | ----------------------------------- |
+| `notes`                      | `text`         | Invoice notes only                  |
+| `1`                          | `amount`       | Quantity (always 1)                 |
+| `final_charge`               | `unit_price`   | Total invoice amount                |
+| —                            | `type`         | `KbPositionCustom` for custom items |
+| —                            | `account_id`   | **Auto-fetched** by account number  |
+| —                            | `tax_id`       | **Auto-fetched** from active taxes  |
+
+## Configuration
+
+The sync service dynamically fetches these values from Bexio during initialization:
+
+| Config Variable         | Fetched From                          |
+| ----------------------- | ------------------------------------- |
+| `BEXIO_INVOICE_IBAN`    | → `bank_account_id` via IBAN lookup   |
+| `BEXIO_INVOICE_ACCOUNT_NO` | → `account_id` via account search  |
+| (automatic)             | → `tax_id` from first active sales tax |
 
 ## API Endpoints
 
@@ -152,6 +171,8 @@ Future options:
 - Auth: `X-Api-Key: {api_key}` header
 - Endpoints:
   - `GET /financials/invoices` - List invoices
+  - `GET /financials/invoices/{id}` - Get invoice details (includes product info)
+  - `GET /clients/{id}` - Get client details
   - ❌ `PATCH /financials/invoices/{id}` - **Not available** (invoices are read-only)
 
 ### Bexio API
@@ -163,10 +184,12 @@ Future options:
   - `GET /2.0/kb_invoice` - List invoices (supports `api_reference` filter)
   - `POST /2.0/kb_invoice` - Create invoice
   - `POST /2.0/kb_invoice/{id}/issue` - Issue invoice
-  - `GET /2.0/kb_invoice/{id}/payment` - Get payments for invoice
-  - `GET /2.0/contact` - Get contacts (for customer lookup)
+  - `POST /2.0/contact/search` - Search contacts (by email)
   - `POST /2.0/contact` - Create contact
   - `POST /3.0/fictional_users` - Create fictional user (for contact user_id)
+  - `GET /3.0/banking/accounts` - Get bank accounts (for IBAN lookup)
+  - `POST /2.0/accounts/search` - Search accounts (for account_no lookup)
+  - `GET /3.0/taxes` - Get tax rates
 
 ## Project Structure
 
@@ -181,7 +204,7 @@ woxio/
 │   ├── wodify/          # Wodify API client package
 │   │   ├── __init__.py
 │   │   ├── client.py    # WodifyClient class
-│   │   └── models.py    # WodifyInvoice, WodifyClient
+│   │   └── models.py    # WodifyInvoice, WodifyInvoiceDetail, WodifyClient
 │   └── bexio/           # Bexio API client package
 │       ├── __init__.py
 │       ├── client.py    # BexioClient class
@@ -213,6 +236,9 @@ uv sync --all-extras
 
 # Run sync locally
 uv run python -m woxio.main
+
+# Run unit tests
+uv run pytest tests/unit/ -v
 
 # Run integration tests (requires API keys in .env)
 uv run pytest tests/integration/test_wodify.py -v

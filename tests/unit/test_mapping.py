@@ -272,10 +272,10 @@ class TestMapInvoice:
         assert position.account_id == TEST_REVENUE_ACCOUNT_ID
         assert position.tax_id == TEST_TAX_ID
 
-    def test_line_item_includes_notes(
+    def test_line_item_uses_notes(
         self, mapper: WodifyToBexioMapper, wodify_invoice: WodifyInvoice
     ) -> None:
-        """Test that invoice notes are included in line item text."""
+        """Test that line item text uses invoice notes."""
         invoice = mapper.map_invoice(
             wodify_invoice,
             contact_id=1,
@@ -284,8 +284,8 @@ class TestMapInvoice:
         )
 
         position = invoice.positions[0]
-        assert "00003508" in position.text
-        assert "Monthly membership fee" in position.text
+        # Line item text should be the notes only
+        assert position.text == "Monthly membership fee"
 
     def test_line_item_without_notes(
         self, mapper: WodifyToBexioMapper, wodify_invoice_no_notes: WodifyInvoice
@@ -314,9 +314,8 @@ class TestMapInvoice:
         )
 
         position = invoice.positions[0]
-        assert "Custom description" in position.text
-        # Notes should still be appended
-        assert "Monthly membership fee" in position.text
+        # Custom text overrides notes
+        assert position.text == "Custom description"
 
     def test_invoice_has_no_id(
         self, mapper: WodifyToBexioMapper, wodify_invoice: WodifyInvoice
@@ -408,10 +407,9 @@ class TestMapInvoiceWithClient:
 
         # Title should use product name
         assert result.title == "1x Training pro Woche: Membership fee"
-        # Line item should include product name and notes
+        # Line item should use notes only (not product name)
         position = result.positions[0]
-        assert "1x Training pro Woche: Membership fee" in position.text
-        assert "First month's membership" in position.text
+        assert position.text == "First month's membership"
 
     def test_still_maps_all_invoice_fields(
         self,

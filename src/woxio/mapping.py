@@ -97,10 +97,8 @@ class WodifyToBexioMapper:
         # Build invoice title - prefer product name
         title = product_name or f"Wodify Invoice {invoice.invoice_number}"
 
-        # Build line item text
-        item_text = line_item_text or product_name or f"Invoice {invoice.invoice_number}"
-        if invoice.notes:
-            item_text = f"{item_text}\n{invoice.notes}"
+        # Build line item text - use notes only (or fallback to invoice number)
+        item_text = line_item_text or invoice.notes or f"Invoice {invoice.invoice_number}"
 
         # Create line item for the total amount
         position = BexioInvoiceItem(
