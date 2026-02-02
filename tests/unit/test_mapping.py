@@ -40,11 +40,12 @@ def wodify_client() -> WodifyClient:
         first_name="John",
         last_name="Doe",
         email="john.doe@example.com",
-        phone="+41 79 123 45 67",
-        address_1="Bahnhofstrasse 1",
+        phone_number="+41 79 123 45 67",
+        street_address_1="Bahnhofstrasse 1",
         city="Zürich",
-        postal_code="8001",
+        zipcode="8001",
         country="Switzerland",
+        gender="Male",
     )
 
 
@@ -124,6 +125,7 @@ class TestMapClientToContact:
         assert contact.postcode == "8001"
         assert contact.city == "Zürich"
         assert contact.country_id == TEST_DEFAULT_COUNTRY_ID
+        assert contact.salutation_id == 1  # Male -> Mr.
 
     def test_maps_owner_id(
         self, mapper: WodifyToBexioMapper, wodify_client: WodifyClient
@@ -178,6 +180,42 @@ class TestMapClientToContact:
         assert contact.street_name is None
         assert contact.city is None
         assert contact.postcode is None
+        assert contact.salutation_id is None
+        assert contact.address_addition is None
+
+    def test_maps_male_gender_to_salutation(self, mapper: WodifyToBexioMapper) -> None:
+        """Test that male gender is mapped to salutation_id 1 (Mr.)."""
+        client = WodifyClient(id=1, email="test@example.com", gender="Male")
+        contact = mapper.map_client_to_contact(client)
+
+        assert contact.salutation_id == 1
+
+    def test_maps_female_gender_to_salutation(self, mapper: WodifyToBexioMapper) -> None:
+        """Test that female gender is mapped to salutation_id 2 (Ms.)."""
+        client = WodifyClient(id=1, email="test@example.com", gender="Female")
+        contact = mapper.map_client_to_contact(client)
+
+        assert contact.salutation_id == 2
+
+    def test_maps_unknown_gender_to_none(self, mapper: WodifyToBexioMapper) -> None:
+        """Test that unknown gender is mapped to None."""
+        client = WodifyClient(id=1, email="test@example.com", gender="Other")
+        contact = mapper.map_client_to_contact(client)
+
+        assert contact.salutation_id is None
+
+    def test_maps_address_addition(self, mapper: WodifyToBexioMapper) -> None:
+        """Test that street_address_2 is mapped to address_addition."""
+        client = WodifyClient(
+            id=1,
+            email="test@example.com",
+            street_address_1="Main Street 1",
+            street_address_2="Building C",
+        )
+        contact = mapper.map_client_to_contact(client)
+
+        assert contact.street_name == "Main Street 1"
+        assert contact.address_addition == "Building C"
 
     def test_result_is_valid_bexio_contact(
         self, mapper: WodifyToBexioMapper, wodify_client: WodifyClient

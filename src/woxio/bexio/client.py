@@ -6,7 +6,7 @@ import httpx
 
 from woxio.config import BexioConfig
 
-from .models import BexioContact, BexioFictionalUser, BexioInvoice
+from .models import BexioContact, BexioInvoice
 
 
 class BexioClient:
@@ -277,8 +277,6 @@ class BexioClient:
     def create_contact(
         self,
         contact: BexioContact,
-        *,
-        create_fictional_user: bool = True,
     ) -> BexioContact:
         """Create a new contact in Bexio.
 
@@ -288,8 +286,6 @@ class BexioClient:
 
         Args:
             contact: The contact to create. Must have owner_id set.
-            create_fictional_user: If True and user_id is None, automatically
-                create a fictional user for this contact.
 
         Returns:
             The created contact with ID populated.
@@ -301,17 +297,6 @@ class BexioClient:
         if contact.owner_id is None:
             raise ValueError("owner_id is required for contact creation")
 
-        # If no user_id, create a fictional user for this contact
-        if contact.user_id is None:
-            if not create_fictional_user:
-                raise ValueError(
-                    "user_id is required for contact creation when "
-                    "create_fictional_user is False"
-                )
-            fictional_user = self._create_fictional_user_for_contact(contact)
-            # Create a copy of the contact with the fictional user's ID
-            contact = contact.model_copy(update={"user_id": fictional_user.id})
-
         payload = contact.model_dump(
             mode="json",
             exclude_none=True,
@@ -321,23 +306,6 @@ class BexioClient:
         response.raise_for_status()
         return BexioContact.model_validate(response.json())
 
-    def _create_fictional_user_for_contact(
-        self, contact: BexioContact
-    ) -> BexioFictionalUser:
-        """Create a fictional user based on contact information.
-
-        Args:
-            contact: The contact to create a fictional user for.
-
-        Returns:
-            The created fictional user.
-        """
-        return self.create_fictional_user(
-            first_name=contact.name_2 or "Unknown",
-            last_name=contact.name_1 or "Customer",
-            email=contact.mail or f"fictional-{contact.name_1}@placeholder.local",
-        )
-
     def get_or_create_contact_by_email(
         self,
         email: str,
@@ -345,21 +313,28 @@ class BexioClient:
         first_name: str = "",
         last_name: str = "",
         phone: str | None = None,
+        street_address: str | None = None,
+        address_addition: str | None = None,
+        postcode: str | None = None,
+        city: str | None = None,
+        country_id: int | None = None,
+        salutation_id: int | None = None,
         owner_id: int,
         remarks: str | None = None,
     ) -> tuple[BexioContact, bool]:
         """Get an existing contact by email, or create a new one if not found.
-
-        When creating a new contact, this method also creates a fictional user
-        for the contact and uses its ID as the user_id. This is required because
-        the user_id on a contact represents the "responsible user" for that
-        contact, which should be a fictional user representing the customer.
 
         Args:
             email: The email address to search/create with.
             first_name: First name for new contact.
             last_name: Last name for new contact.
             phone: Phone number for new contact.
+            street_address: Street address for new contact.
+            address_addition: Additional address info (e.g., apartment, building).
+            postcode: Postal code for new contact.
+            city: City for new contact.
+            country_id: Bexio country ID for new contact.
+            salutation_id: Bexio salutation ID (1 = Mr., 2 = Ms.).
             owner_id: Bexio owner ID (required for creation).
             remarks: Optional remarks (e.g., Wodify client ID).
 
@@ -372,84 +347,25 @@ class BexioClient:
         if existing:
             return existing[0], False
 
-        # Create a fictional user for this contact
-        fictional_user = self.create_fictional_user(
-            first_name=first_name or "Unknown",
-            last_name=last_name or "Customer",
-            email=email,
-        )
-
         # Create new contact using the fictional user's ID
         new_contact = BexioContact(
             contact_type_id=2,  # Person
             name_1=last_name or "Unknown",
             name_2=first_name or None,
+            salutation_id=salutation_id,
             mail=email,
             phone_mobile=phone,
-            user_id=fictional_user.id,
+            street_name=street_address,
+            address_addition=address_addition,
+            postcode=postcode,
+            city=city,
+            country_id=country_id,
+            user_id=owner_id,
             owner_id=owner_id,
             remarks=remarks,
         )
         created = self.create_contact(new_contact)
         return created, True
-
-    # Fictional User endpoints
-
-    def get_fictional_users(self) -> list[BexioFictionalUser]:
-        """Get all fictional users from Bexio.
-
-        Returns:
-            List of fictional users.
-        """
-        response = self.client.get("/3.0/fictional_users")
-        response.raise_for_status()
-        return [BexioFictionalUser.model_validate(u) for u in response.json()]
-
-    def get_fictional_user(self, fictional_user_id: int) -> BexioFictionalUser:
-        """Get a single fictional user by ID.
-
-        Args:
-            fictional_user_id: The Bexio fictional user ID.
-
-        Returns:
-            The fictional user.
-        """
-        response = self.client.get(f"/3.0/fictional_users/{fictional_user_id}")
-        response.raise_for_status()
-        return BexioFictionalUser.model_validate(response.json())
-
-    def create_fictional_user(
-        self,
-        *,
-        first_name: str,
-        last_name: str,
-        email: str,
-        salutation_type: str = "male",
-    ) -> BexioFictionalUser:
-        """Create a new fictional user in Bexio.
-
-        Fictional users are pseudo-users that can be assigned as the responsible
-        user for contacts. When creating contacts for customers, a corresponding
-        fictional user should be created and its ID used as the contact's user_id.
-
-        Args:
-            first_name: The fictional user's first name.
-            last_name: The fictional user's last name.
-            email: The fictional user's email address.
-            salutation_type: Salutation type ("male" or "female").
-
-        Returns:
-            The created fictional user with ID populated.
-        """
-        payload = {
-            "salutation_type": salutation_type,
-            "first_name": first_name,
-            "last_name": last_name,
-            "email": email,
-        }
-        response = self.client.post("/3.0/fictional_users", json=payload)
-        response.raise_for_status()
-        return BexioFictionalUser.model_validate(response.json())
 
     # Tax endpoints
 

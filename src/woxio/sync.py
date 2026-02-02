@@ -142,14 +142,42 @@ class InvoiceSyncService:
         if not client.email:
             raise ValueError(f"Wodify client {client.id} has no email address")
 
+        # Map gender to salutation_id
+        salutation_id = self._map_gender_to_salutation(client.gender)
+
         return self.bexio.get_or_create_contact_by_email(
             email=client.email,
             first_name=client.first_name,
             last_name=client.last_name,
             phone=client.phone,
+            street_address=client.street_address_1,
+            address_addition=client.street_address_2,
+            postcode=client.zipcode,
+            city=client.city,
+            country_id=self.config.default_country_id,
+            salutation_id=salutation_id,
             owner_id=self.config.owner_id,
             remarks=f"Wodify Client ID: {client.id}",
         )
+
+    @staticmethod
+    def _map_gender_to_salutation(gender: str | None) -> int | None:
+        """Map Wodify gender to Bexio salutation_id.
+
+        Args:
+            gender: Wodify gender string ("Male", "Female", etc.).
+
+        Returns:
+            Bexio salutation_id (1 = Mr., 2 = Ms.) or None if unknown.
+        """
+        if not gender:
+            return None
+        gender_lower = gender.lower()
+        if gender_lower == "male":
+            return 1  # Mr. (Herr)
+        if gender_lower == "female":
+            return 2  # Ms. (Frau)
+        return None
 
     def sync_invoice(
         self,

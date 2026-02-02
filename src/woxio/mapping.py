@@ -58,16 +58,37 @@ class WodifyToBexioMapper:
             contact_type_id=2,  # Person
             name_1=client.last_name or "Unknown",
             name_2=client.first_name or None,
+            salutation_id=self._map_gender_to_salutation(client.gender),
             mail=client.email,
             phone_mobile=client.phone,
-            street_name=client.address_1,
-            postcode=client.postal_code,
+            street_name=client.street_address_1,
+            address_addition=client.street_address_2,
+            postcode=client.zipcode,
             city=client.city,
             country_id=self.default_country_id,
             # user_id is NOT set here - BexioClient will create a fictional user
             owner_id=self.owner_id,
             remarks=f"Wodify Client ID: {client.id}",
         )
+
+    @staticmethod
+    def _map_gender_to_salutation(gender: str | None) -> int | None:
+        """Map Wodify gender to Bexio salutation_id.
+
+        Args:
+            gender: Wodify gender string ("Male", "Female", etc.).
+
+        Returns:
+            Bexio salutation_id (1 = Mr., 2 = Ms.) or None if unknown.
+        """
+        if not gender:
+            return None
+        gender_lower = gender.lower()
+        if gender_lower == "male":
+            return 1  # Mr. (Herr)
+        if gender_lower == "female":
+            return 2  # Ms. (Frau)
+        return None
 
     def map_invoice(
         self,

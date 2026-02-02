@@ -19,7 +19,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 def main() -> None:
     """Search for a Bexio invoice by document_nr."""
-    document_nr = "RE-05081"
+    document_nr = "RE-05077"
 
     config = BexioConfig()
     with BexioClient(config) as client:

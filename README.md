@@ -186,7 +186,6 @@ The sync service dynamically fetches these values from Bexio during initializati
   - `POST /2.0/kb_invoice/{id}/issue` - Issue invoice
   - `POST /2.0/contact/search` - Search contacts (by email)
   - `POST /2.0/contact` - Create contact
-  - `POST /3.0/fictional_users` - Create fictional user (for contact user_id)
   - `GET /3.0/banking/accounts` - Get bank accounts (for IBAN lookup)
   - `POST /2.0/accounts/search` - Search accounts (for account_no lookup)
   - `GET /3.0/taxes` - Get tax rates
@@ -208,7 +207,7 @@ woxio/
 │   └── bexio/           # Bexio API client package
 │       ├── __init__.py
 │       ├── client.py    # BexioClient class
-│       └── models.py    # BexioInvoice, BexioContact, BexioFictionalUser
+│       └── models.py    # BexioInvoice, BexioContact
 ├── tests/               # Test suite
 │   ├── conftest.py      # Pytest configuration
 │   ├── unit/            # Unit tests

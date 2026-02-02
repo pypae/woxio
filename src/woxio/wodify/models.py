@@ -92,15 +92,23 @@ class WodifyClient(BaseModel):
     first_name: str = ""
     last_name: str = ""
     email: str | None = None
-    phone: str | None = None
-    address_1: str | None = None
-    address_2: str | None = None
+    phone_number: str | None = None
+    street_address_1: str | None = None
+    street_address_2: str | None = None
     city: str | None = None
     state: str | None = None
-    postal_code: str | None = None
+    province: str | None = None
+    zipcode: str | None = None
     country: str | None = None
+    gender_id: int | None = None
+    gender: str | None = None
 
     @property
     def full_name(self) -> str:
         """Get the full name."""
         return f"{self.first_name} {self.last_name}".strip()
+
+    @property
+    def phone(self) -> str | None:
+        """Get the phone number (alias for phone_number)."""
+        return self.phone_number

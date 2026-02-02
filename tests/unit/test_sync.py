@@ -77,7 +77,12 @@ def wodify_client_model() -> WodifyClient:
         first_name="John",
         last_name="Doe",
         email="john.doe@example.com",
-        phone="+41 79 123 45 67",
+        phone_number="+41 79 123 45 67",
+        street_address_1="Bahnhofstrasse 1",
+        street_address_2="Apt 5",
+        city="Zürich",
+        zipcode="8001",
+        gender="Male",
     )
 
 
@@ -260,6 +265,12 @@ class TestGetOrCreateContact:
             first_name="John",
             last_name="Doe",
             phone="+41 79 123 45 67",
+            street_address="Bahnhofstrasse 1",
+            address_addition="Apt 5",
+            postcode="8001",
+            city="Zürich",
+            country_id=1,
+            salutation_id=1,  # Male -> Mr.
             owner_id=1,
             remarks="Wodify Client ID: 12345",
         )
