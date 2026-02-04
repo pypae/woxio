@@ -120,8 +120,8 @@ Future options:
 | `id`                              | `api_reference`    | **Used as idempotency key**              |
 | `invoice_details[0].product`      | `title`            | Product name from invoice details        |
 | `client_id`                       | `contact_id`       | Via client lookup (see above)            |
-| `payment_due`                     | `is_valid_to`      | Payment due date                         |
-| `created.created_on`              | `is_valid_from`    | Invoice date                             |
+| `payment_due`                     | `is_valid_from`    | Invoice valid from date                  |
+| `payment_due + 30 days`           | `is_valid_to`      | Payment due date (30 days after)         |
 | `final_charge`                    | (position amount)  | Total amount (mapped to line items)      |
 | —                                 | `user_id`          | Bexio owner ID (from config)             |
 | —                                 | `bank_account_id`  | **Auto-fetched** by IBAN lookup          |

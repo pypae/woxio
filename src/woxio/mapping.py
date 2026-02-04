@@ -1,7 +1,7 @@
 """Mapping between Wodify and Bexio data models."""
 
-from decimal import Decimal
 from datetime import timedelta
+from decimal import Decimal
 
 from woxio.bexio.models import BexioContact, BexioInvoice, BexioInvoiceItem
 from woxio.wodify.models import WodifyClient, WodifyInvoice

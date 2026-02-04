@@ -260,8 +260,9 @@ class TestMapInvoice:
             bank_account_id=TEST_BANK_ACCOUNT_ID,
         )
 
-        assert invoice.is_valid_from == date(2025, 1, 15)
-        assert invoice.is_valid_to == date(2025, 2, 15)
+        # is_valid_from = payment_due, is_valid_to = payment_due + 30 days
+        assert invoice.is_valid_from == date(2025, 2, 15)
+        assert invoice.is_valid_to == date(2025, 3, 17)
 
     def test_uses_passed_ids(
         self, mapper: WodifyToBexioMapper, wodify_invoice: WodifyInvoice
@@ -466,7 +467,7 @@ class TestMapInvoiceWithClient:
 
         assert invoice.contact_id == 651
         assert invoice.api_reference == "92421099"
-        assert invoice.is_valid_from == date(2025, 1, 15)
+        assert invoice.is_valid_from == date(2025, 2, 15)  # payment_due
         assert len(invoice.positions) == 1
 
 
