@@ -56,7 +56,6 @@ This allows:
 
 ```
 InvoiceSyncService.initialize()
-├── Fetch tax_id from active sales taxes
 ├── Fetch bank_account_id by IBAN lookup
 └── Fetch revenue_account_id by account number lookup
 
@@ -150,17 +149,31 @@ Future options:
 | `final_charge`               | `unit_price`   | Total invoice amount                |
 | —                            | `type`         | `KbPositionCustom` for custom items |
 | —                            | `account_id`   | **Auto-fetched** by account number  |
-| —                            | `tax_id`       | **Auto-fetched** from active taxes  |
+| —                            | `tax_id`       | From `BEXIO_TAX_ID` config          |
 
 ## Configuration
 
-The sync service dynamically fetches these values from Bexio during initialization:
+The sync service uses these environment variables (see `.env.template`):
 
-| Config Variable         | Fetched From                          |
-| ----------------------- | ------------------------------------- |
-| `BEXIO_INVOICE_IBAN`    | → `bank_account_id` via IBAN lookup   |
-| `BEXIO_INVOICE_ACCOUNT_NO` | → `account_id` via account search  |
-| (automatic)             | → `tax_id` from first active sales tax |
+| Config Variable            | Description                                       |
+| -------------------------- | ------------------------------------------------- |
+| `BEXIO_OWNER_ID`           | Bexio owner ID for created records                |
+| `BEXIO_INVOICE_ACCOUNT_NO` | Revenue account number (e.g., 3200)               |
+| `BEXIO_INVOICE_IBAN`       | Bank IBAN → auto-resolves to `bank_account_id`    |
+| `BEXIO_DEFAULT_COUNTRY_ID` | Default country ID for new contacts (1=Switzerland) |
+| `BEXIO_TAX_ID`             | Sales tax ID for invoice line items (e.g., 28)    |
+
+### Getting Available Sales Tax IDs
+
+To find the correct `BEXIO_TAX_ID` for your account, query the Bexio API:
+
+```bash
+curl -H "Authorization: Bearer $BEXIO_API_TOKEN" \
+  "https://api.bexio.com/3.0/taxes?types=sales_tax&scope=active"
+```
+
+This returns a list of active sales taxes. Use the `id` field from the appropriate tax rate:
+
 
 ## API Endpoints
 

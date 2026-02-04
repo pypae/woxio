@@ -45,7 +45,6 @@ class InvoiceSyncService:
         self.wodify = wodify_client
 
         # These are fetched during initialize()
-        self._tax_id: int | None = None
         self._bank_account_id: int | None = None
         self._revenue_account_id: int | None = None
         self._mapper: WodifyToBexioMapper | None = None
@@ -54,19 +53,14 @@ class InvoiceSyncService:
         """Initialize the sync service by fetching Bexio settings.
 
         This method must be called before syncing invoices. It fetches:
-        - tax_id: From active sales taxes
         - bank_account_id: By looking up the configured IBAN
         - revenue_account_id: By looking up the configured account number
+
+        Note: tax_id is configured via BEXIO_TAX_ID environment variable.
 
         Raises:
             RuntimeError: If any lookup fails.
         """
-        # Fetch the first active sales tax
-        taxes = self.bexio.get_active_sales_taxes()
-        if not taxes:
-            raise RuntimeError("No active sales taxes found in Bexio")
-        self._tax_id = int(taxes[0]["id"])
-
         # Look up bank account by IBAN
         bank_account_id = self.bexio.get_bank_account_id_by_iban(self.config.bank_iban)
         if bank_account_id is None:
@@ -95,10 +89,8 @@ class InvoiceSyncService:
 
     @property
     def tax_id(self) -> int:
-        """Get the fetched tax ID."""
-        if self._tax_id is None:
-            raise RuntimeError("tax_id not available. Call initialize() first.")
-        return self._tax_id
+        """Get the configured tax ID."""
+        return self.config.tax_id
 
     @property
     def bank_account_id(self) -> int:

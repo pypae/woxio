@@ -25,6 +25,7 @@ def sync_config() -> SyncConfig:
         revenue_account_no=3200,
         bank_iban="CH00 0000 0000 0000 0000 0",
         default_country_id=1,
+        tax_id=TEST_TAX_ID,
     )
 
 
@@ -32,7 +33,6 @@ def sync_config() -> SyncConfig:
 def mock_bexio_client() -> Mock:
     """Create a mock BexioClient."""
     client = Mock()
-    client.get_active_sales_taxes.return_value = [{"id": TEST_TAX_ID, "name": "VAT"}]
     client.get_bank_account_id_by_iban.return_value = TEST_BANK_ACCOUNT_ID
     client.search_accounts_by_account_no.return_value = [
         {"id": TEST_REVENUE_ACCOUNT_ID, "account_no": "3200"}
@@ -109,18 +109,17 @@ def wodify_invoice() -> WodifyInvoice:
 class TestInitialize:
     """Tests for the initialize method."""
 
-    def test_fetches_tax_id_from_api(
+    def test_tax_id_from_config(
         self,
         sync_config: SyncConfig,
         mock_bexio_client: Mock,
         mock_wodify_client: Mock,
     ) -> None:
-        """Test that tax_id is fetched from the API."""
+        """Test that tax_id comes from config."""
         service = InvoiceSyncService(sync_config, mock_bexio_client, mock_wodify_client)
-        service.initialize()
 
+        # tax_id is available immediately from config (no initialize needed)
         assert service.tax_id == TEST_TAX_ID
-        mock_bexio_client.get_active_sales_taxes.assert_called_once()
 
     def test_fetches_bank_account_id_by_iban(
         self,
@@ -165,19 +164,6 @@ class TestInitialize:
         assert service.revenue_account_id == TEST_REVENUE_ACCOUNT_ID
         mock_bexio_client.search_accounts_by_account_no.assert_called_once_with("3200")
 
-    def test_raises_error_when_no_taxes_found(
-        self,
-        sync_config: SyncConfig,
-        mock_wodify_client: Mock,
-    ) -> None:
-        """Test that RuntimeError is raised when no taxes are found."""
-        bexio = Mock()
-        bexio.get_active_sales_taxes.return_value = []
-        service = InvoiceSyncService(sync_config, bexio, mock_wodify_client)
-
-        with pytest.raises(RuntimeError, match="No active sales taxes"):
-            service.initialize()
-
     def test_raises_error_when_iban_not_found(
         self,
         sync_config: SyncConfig,
@@ -185,7 +171,6 @@ class TestInitialize:
     ) -> None:
         """Test that RuntimeError is raised when IBAN lookup fails."""
         bexio = Mock()
-        bexio.get_active_sales_taxes.return_value = [{"id": 1}]
         bexio.get_bank_account_id_by_iban.return_value = None
         service = InvoiceSyncService(sync_config, bexio, mock_wodify_client)
 
@@ -199,7 +184,6 @@ class TestInitialize:
     ) -> None:
         """Test that RuntimeError is raised when account number lookup fails."""
         bexio = Mock()
-        bexio.get_active_sales_taxes.return_value = [{"id": 1}]
         bexio.get_bank_account_id_by_iban.return_value = 42
         bexio.search_accounts_by_account_no.return_value = []
         service = InvoiceSyncService(sync_config, bexio, mock_wodify_client)
@@ -211,12 +195,12 @@ class TestInitialize:
 class TestPropertiesBeforeInitialize:
     """Tests for property access before initialization."""
 
-    def test_tax_id_raises_before_initialize(
+    def test_tax_id_available_without_initialize(
         self, sync_service_uninitialized: InvoiceSyncService
     ) -> None:
-        """Test that accessing tax_id before initialize raises an error."""
-        with pytest.raises(RuntimeError, match="initialize"):
-            _ = sync_service_uninitialized.tax_id
+        """Test that tax_id is available from config without initialization."""
+        # tax_id comes from config, not from initialize()
+        assert sync_service_uninitialized.tax_id == TEST_TAX_ID
 
     def test_bank_account_id_raises_before_initialize(
         self, sync_service_uninitialized: InvoiceSyncService

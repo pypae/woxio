@@ -49,6 +49,12 @@ class SyncConfig(BaseSettings):
         validation_alias=AliasChoices("BEXIO_INVOICE_IBAN", "bank_iban"),
     )
 
+    # Tax settings
+    tax_id: int = Field(
+        description="Bexio tax ID for invoice line items",
+        validation_alias=AliasChoices("BEXIO_TAX_ID", "tax_id"),
+    )
+
     # Optional settings
     default_country_id: int | None = Field(
         default=1,  # 1 = Switzerland in Bexio

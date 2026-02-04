@@ -1,6 +1,7 @@
 """Mapping between Wodify and Bexio data models."""
 
 from decimal import Decimal
+from datetime import timedelta
 
 from woxio.bexio.models import BexioContact, BexioInvoice, BexioInvoiceItem
 from woxio.wodify.models import WodifyClient, WodifyInvoice
@@ -137,8 +138,8 @@ class WodifyToBexioMapper:
             bank_account_id=bank_account_id,
             title=title,
             api_reference=str(invoice.id),
-            is_valid_from=invoice.created.created_on_datetime.date(),
-            is_valid_to=invoice.payment_due,
+            is_valid_from=invoice.payment_due,
+            is_valid_to=invoice.payment_due + timedelta(days=30),
             positions=[position],
             mwst_type=0,  # VAT type: 0 = inclusive
             mwst_is_net=False,  # Prices are gross (VAT included)
