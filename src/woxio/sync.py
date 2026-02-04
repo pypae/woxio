@@ -119,7 +119,7 @@ class InvoiceSyncService:
         """Get or create a Bexio contact for a Wodify client.
 
         Searches for an existing contact by email. If not found, creates a new
-        contact with a fictional user.
+        contact.
 
         Args:
             client: The Wodify client.

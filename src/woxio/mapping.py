@@ -46,7 +46,7 @@ class WodifyToBexioMapper:
         """Map a Wodify client to a Bexio contact.
 
         Note: The user_id is intentionally not set here. When the contact is
-        created via BexioClient.create_contact(), a fictional user will be
+        created via BexioClient.create_contact(), owner_id will be used as
         automatically created for this contact.
 
         Args:
@@ -67,7 +67,7 @@ class WodifyToBexioMapper:
             postcode=client.zipcode,
             city=client.city,
             country_id=self.default_country_id,
-            # user_id is NOT set here - BexioClient will create a fictional user
+            # user_id is set by BexioClient using owner_id
             owner_id=self.owner_id,
             remarks=f"Wodify Client ID: {client.id}",
         )

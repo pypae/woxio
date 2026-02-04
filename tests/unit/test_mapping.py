@@ -134,7 +134,7 @@ class TestMapClientToContact:
         contact = mapper.map_client_to_contact(wodify_client)
 
         # user_id is intentionally NOT set by the mapper - BexioClient
-        # will create a fictional user and set user_id automatically
+        # user_id will be set by BexioClient using owner_id
         assert contact.user_id is None
         assert contact.owner_id == TEST_OWNER_ID
 

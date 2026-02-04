@@ -1,7 +1,7 @@
 [project]
 name = "woxio"
 version = "0.1.0"
-description = "Integrate wodify with bexio"
+description = "Integrate wodify invoices with bexio"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

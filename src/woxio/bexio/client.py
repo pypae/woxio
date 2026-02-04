@@ -280,10 +280,6 @@ class BexioClient:
     ) -> BexioContact:
         """Create a new contact in Bexio.
 
-        If the contact doesn't have a user_id set and create_fictional_user is True,
-        a fictional user will be automatically created for this contact using the
-        contact's name and email.
-
         Args:
             contact: The contact to create. Must have owner_id set.
 
@@ -291,8 +287,7 @@ class BexioClient:
             The created contact with ID populated.
 
         Raises:
-            ValueError: If owner_id is not set, or if user_id is not set and
-                create_fictional_user is False.
+            ValueError: If owner_id is not set.
         """
         if contact.owner_id is None:
             raise ValueError("owner_id is required for contact creation")
@@ -347,7 +342,7 @@ class BexioClient:
         if existing:
             return existing[0], False
 
-        # Create new contact using the fictional user's ID
+        # Create new contact
         new_contact = BexioContact(
             contact_type_id=2,  # Person
             name_1=last_name or "Unknown",

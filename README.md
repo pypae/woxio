@@ -69,22 +69,10 @@ sync_invoices()
 │   │   ├── GET Wodify client: /v1/clients/{client_id}
 │   │   ├── Search Bexio contact: POST /2.0/contact/search (by email)
 │   │   ├── If no Bexio contact exists:
-│   │   │   ├── POST /3.0/fictional_users (create fictional user for customer)
-│   │   │   └── POST /2.0/contact (create contact with fictional user_id)
+│   │   │   └── POST /2.0/contact (create contact)
 │   │   ├── Map Wodify invoice to Bexio invoice (using product name as title)
 │   │   └── POST /2.0/kb_invoice (create draft with api_reference=wodify_invoice_id)
 ```
-
-### Fictional Users
-
-When creating a new Bexio contact, a **fictional user** must first be created. In Bexio:
-- `owner_id` = The real Bexio account user who manages the record (from config)
-- `user_id` = The "responsible user" for the contact - must reference a user object
-
-For imported contacts (customers), we create a **fictional user** to serve as the `user_id`:
-- Fictional users are pseudo-users that don't consume Bexio licenses
-- Each new contact gets its own fictional user with matching name/email
-- This ensures proper assignment without using real Bexio user accounts
 
 ### Flow 2: Bexio Payment → Wodify Update
 
@@ -117,7 +105,7 @@ Future options:
 | `postal_code`   | `postcode`         | Postal/ZIP code                                  |
 | `city`          | `city`             | City name                                        |
 | —               | `contact_type_id`  | Always `2` (Person)                              |
-| —               | `user_id`          | **From created fictional user** (see above)      |
+| —               | `user_id`          | Same as `owner_id` (from config)                 |
 | —               | `owner_id`         | Bexio owner ID (from config)                     |
 
 **Lookup Strategy:**
