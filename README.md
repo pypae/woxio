@@ -16,7 +16,7 @@ Woxio syncs invoices from Wodify (fitness platform) to Bexio (accounting):
 │                                                             │
 │  ┌──────────────────┐         ┌──────────────────┐          │
 │  │ Cloud Scheduler  │────────▶│ Cloud Function   │          │
-│  │ (every 5-15 min) │         │ "sync_invoices"  │          │
+│  │ (every 15 min)   │         │ "sync_invoices"  │          │
 │  └──────────────────┘         └──────────────────┘          │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -212,6 +212,7 @@ woxio/
 ├── tests/               # Test suite
 │   ├── conftest.py      # Pytest configuration
 │   ├── unit/            # Unit tests
+│   │   ├── test_main.py
 │   │   ├── test_mapping.py
 │   │   └── test_sync.py
 │   └── integration/     # Integration tests against live APIs
@@ -252,14 +253,44 @@ uv run mypy src
 ## Deployment (GCP)
 
 ```bash
-# Deploy sync_invoices function
+# Install Google Cloud CLI (macOS/Homebrew)
+brew install --cask gcloud-cli
+
+# Authenticate and select project
+gcloud auth login
+gcloud config set project woxio-485821
+
+# Generate deployment requirements (exclude local project package)
+uv export --no-hashes --no-emit-project > requirements.txt
+
+# Deploy Cloud Function (HTTP entrypoint: sync_invoices_handler)
 gcloud functions deploy sync_invoices \
   --runtime python312 \
+  --entry-point sync_invoices_handler \
   --trigger-http \
+  --allow-unauthenticated \
+  --env-vars-file .env.yaml
+
+# Deploy daily issue function (HTTP entrypoint: issue_invoices_handler)
+gcloud functions deploy issue_invoices \
+  --runtime python312 \
+  --entry-point issue_invoices_handler \
+  --trigger-http \
+  --allow-unauthenticated \
   --env-vars-file .env.yaml
 
 # Create scheduler (run every 15 minutes)
 gcloud scheduler jobs create http sync-invoices-job \
+  --location=us-central1 \
   --schedule="*/15 * * * *" \
-  --uri="https://REGION-PROJECT.cloudfunctions.net/sync_invoices"
+  --uri="https://us-central1-woxio-485821.cloudfunctions.net/sync_invoices"
+
+# Create scheduler (run daily at 22:00 Europe/Zurich)
+gcloud scheduler jobs create http issue-invoices-job \
+  --location=us-central1 \
+  --schedule="0 22 * * *" \
+  --time-zone="Europe/Zurich" \
+  --uri="https://us-central1-woxio-485821.cloudfunctions.net/issue_invoices"
 ```
+
+The `issue_invoices` job issues only invoices created by this integration (`api_reference` set), only while they are still in draft status, and only when `is_valid_from` is today or earlier.

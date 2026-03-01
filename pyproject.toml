@@ -3,7 +3,7 @@ name = "woxio"
 version = "0.1.0"
 description = "Integrate wodify invoices with bexio"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28.1",
     "pydantic>=2.0.0",

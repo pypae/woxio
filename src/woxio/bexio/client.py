@@ -126,18 +126,69 @@ class BexioClient:
         response.raise_for_status()
         return BexioInvoice.model_validate(response.json())
 
-    def issue_invoice(self, invoice_id: int) -> BexioInvoice:
+    def issue_invoice(self, invoice_id: int) -> dict[str, Any]:
         """Issue a draft invoice (change status from draft to open).
 
         Args:
             invoice_id: The invoice ID to issue.
 
         Returns:
-            The updated invoice.
+            API response payload (typically {"success": true}).
         """
         response = self.client.post(f"/2.0/kb_invoice/{invoice_id}/issue")
         response.raise_for_status()
-        return BexioInvoice.model_validate(response.json())
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        return {"success": True}
+
+    def get_invoices_with_api_reference(
+        self,
+        *,
+        limit: int = 500,
+    ) -> list[BexioInvoice]:
+        """Get invoices where api_reference is non-empty (Woxio-linked invoices).
+
+        Args:
+            limit: Page size per request.
+
+        Returns:
+            List of matching invoices.
+        """
+        invoices: list[BexioInvoice] = []
+        offset = 0
+
+        while True:
+            params: dict[str, str | int] = {
+                "limit": limit,
+                "offset": offset,
+            }
+            search_params = [
+                {
+                    "field": "api_reference",
+                    "value": "",
+                    "criteria": "not_null",
+                }
+            ]
+            response = self.client.post(
+                "/2.0/kb_invoice/search",
+                json=search_params,
+                params=params,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            page = [BexioInvoice.model_validate(inv) for inv in data]
+            page_with_api_reference = [
+                inv for inv in page if (inv.api_reference is not None and inv.api_reference.strip())
+            ]
+            invoices.extend(page_with_api_reference)
+
+            if len(page) < limit:
+                break
+            offset += limit
+
+        return invoices
 
     def invoice_exists_for_reference(self, api_reference: str) -> bool:
         """Check if an invoice already exists with the given api_reference.

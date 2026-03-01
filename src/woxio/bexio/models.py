@@ -27,6 +27,7 @@ class BexioInvoice(BaseModel):
 
     id: int | None = None
     document_nr: str | None = None  # Bexio-generated invoice number (e.g., "RE-05081")
+    kb_item_status_id: int | None = None
     contact_id: int
     user_id: int
     bank_account_id: int | None = None

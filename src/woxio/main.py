@@ -1,8 +1,11 @@
 """Cloud Function entry point for Woxio invoice sync."""
 
 import logging
+import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+import httpx
 
 from woxio.bexio import BexioClient
 from woxio.config import Config
@@ -91,38 +94,126 @@ def sync_invoices(config: Config) -> dict[str, Any]:
     }
 
 
-def sync_invoices_handler(request: Any) -> tuple[dict[str, Any], int]:
-    """HTTP Cloud Function entry point.
+def issue_synced_invoices(config: Config) -> dict[str, Any]:
+    """Issue Woxio-created draft invoices in Bexio.
+
+    Only invoices with a non-empty api_reference are considered, which identifies
+    invoices created by this integration.
 
     Args:
-        request: The Flask request object.
+        config: Application configuration.
 
     Returns:
-        JSON response with sync results.
+        Summary of issue operation.
     """
-    try:
-        config = Config.from_env()
-        result = sync_invoices(config)
-        return result, 200
-    except ValueError as e:
-        logger.error(f"Configuration error: {e}")
-        return {"status": "error", "message": str(e)}, 500
-    except Exception as e:
-        logger.exception("Unexpected error during sync")
-        return {"status": "error", "message": str(e)}, 500
+    issued_count = 0
+    skipped_count = 0
+    error_count = 0
+    errors: list[str] = []
+    issue_from_cutoff_date = datetime.now(UTC).date()
+
+    with BexioClient(config.bexio) as bexio:
+        invoices = bexio.get_invoices_with_api_reference()
+        logger.info(
+            f"Found {len(invoices)} Woxio-linked invoices in Bexio "
+            f"(issuing when valid_from <= {issue_from_cutoff_date.isoformat()})"
+        )
+
+        for invoice in invoices:
+            invoice_ref = invoice.document_nr or invoice.api_reference or str(invoice.id)
+            api_reference = (invoice.api_reference or "").strip()
+            if not api_reference:
+                logger.info(f"Skipping invoice {invoice.id} without api_reference")
+                skipped_count += 1
+                continue
+
+            if invoice.id is None:
+                logger.warning(f"Skipping invoice without id ({invoice_ref})")
+                skipped_count += 1
+                continue
+
+            # 7 = draft in Bexio
+            if invoice.kb_item_status_id != 7:
+                logger.info(
+                    f"Skipping non-draft invoice {invoice.id} "
+                    f"(status={invoice.kb_item_status_id})"
+                )
+                skipped_count += 1
+                continue
+
+            if invoice.is_valid_from is None:
+                logger.info(f"Skipping invoice {invoice.id} without valid_from date")
+                skipped_count += 1
+                continue
+
+            if invoice.is_valid_from > issue_from_cutoff_date:
+                logger.info(
+                    f"Skipping invoice {invoice.id} valid from {invoice.is_valid_from.isoformat()} "
+                    f"(later than cutoff {issue_from_cutoff_date.isoformat()})"
+                )
+                skipped_count += 1
+                continue
+
+            try:
+                result = bexio.issue_invoice(invoice.id)
+                if result.get("success", False):
+                    issued_count += 1
+                    logger.info(f"Issued Bexio invoice {invoice.id} ({invoice_ref})")
+                else:
+                    # Treat non-success issue responses as skip to avoid retries on non-drafts
+                    skipped_count += 1
+                    logger.warning(
+                        f"Issue call returned non-success for invoice {invoice.id}: {result}"
+                    )
+            except httpx.HTTPStatusError as e:
+                status_code = e.response.status_code
+                if status_code in (400, 422):
+                    skipped_count += 1
+                    logger.info(
+                        f"Skipping invoice {invoice.id} due to non-issueable status "
+                        f"(HTTP {status_code})"
+                    )
+                else:
+                    error_count += 1
+                    message = f"{invoice_ref}: HTTP {status_code}"
+                    errors.append(message)
+                    logger.error(f"Error issuing invoice {invoice.id}: {e}")
+            except Exception as e:
+                error_count += 1
+                message = f"{invoice_ref}: {str(e)}"
+                errors.append(message)
+                logger.error(f"Error issuing invoice {invoice.id}: {e}")
+
+    return {
+        "status": "completed",
+        "issued": issued_count,
+        "skipped": skipped_count,
+        "errors": error_count,
+        "error_details": errors,
+    }
 
 
 def main() -> None:
-    """Run sync locally for development/testing."""
+    """Run sync or issue locally for development/testing."""
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    config = Config.from_env()
-    result = sync_invoices(config)
+    mode = sys.argv[1] if len(sys.argv) > 1 else "sync"
+    if mode not in {"sync", "issue"}:
+        print("Usage: uv run python -m woxio.main [sync|issue]")
+        raise SystemExit(2)
 
-    print("Sync completed:")
-    print(f"  Created: {result['created']}")
+    config = Config.from_env()
+    if mode == "issue":
+        result = issue_synced_invoices(config)
+        print("Issue completed:")
+        print(f"  Issued: {result['issued']}")
+    else:
+        result = sync_invoices(config)
+        print("Sync completed:")
+        print(f"  Created: {result['created']}")
+
     print(f"  Skipped: {result['skipped']}")
     print(f"  Errors: {result['errors']}")
     if result["error_details"]:
