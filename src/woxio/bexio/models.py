@@ -36,6 +36,7 @@ class BexioInvoice(BaseModel):
     api_reference: str | None = None  # For storing Wodify invoice ID
     is_valid_from: date | None = None
     is_valid_to: date | None = None
+    total: Decimal | None = None
     mwst_type: int = 0  # 0 = included, 1 = excluded, 2 = exempt
     mwst_is_net: bool = True
 

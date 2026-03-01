@@ -184,7 +184,8 @@ This returns a list of active sales taxes. Use the `id` field from the appropria
 - Endpoints:
   - `GET /2.0/kb_invoice` - List invoices (supports `api_reference` filter)
   - `POST /2.0/kb_invoice` - Create invoice
-  - `POST /2.0/kb_invoice/{id}/issue` - Issue invoice
+  - `POST /2.0/kb_invoice/{id}/send` - Send invoice by email
+  - `GET /3.0/users/{id}` - Resolve invoice owner email/name
   - `POST /2.0/contact/search` - Search contacts (by email)
   - `POST /2.0/contact` - Create contact
   - `GET /3.0/banking/accounts` - Get bank accounts (for IBAN lookup)
@@ -293,4 +294,4 @@ gcloud scheduler jobs create http issue-invoices-job \
   --uri="https://us-central1-woxio-485821.cloudfunctions.net/issue_invoices"
 ```
 
-The `issue_invoices` job issues only invoices created by this integration (`api_reference` set), only while they are still in draft status, and only when `is_valid_from` is today or earlier.
+The `issue_invoices` job sends only invoices created by this integration (`api_reference` set), only while they are still in draft status, and only when `is_valid_from` is today or earlier.

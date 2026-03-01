@@ -142,6 +142,59 @@ class BexioClient:
             return data
         return {"success": True}
 
+    def send_invoice(
+        self,
+        invoice_id: int,
+        *,
+        recipient_email: str,
+        subject: str,
+        message: str,
+        mark_as_open: bool = True,
+        attach_pdf: bool = True,
+    ) -> dict[str, Any]:
+        """Send an invoice by email.
+
+        Args:
+            invoice_id: The invoice ID to send.
+            recipient_email: Recipient email address.
+            subject: Email subject.
+            message: Email body. Must include "[Network Link]" placeholder for Bexio.
+            mark_as_open: Mark invoice as open when sending.
+            attach_pdf: Attach the invoice PDF to the email.
+
+        Returns:
+            API response payload (typically {"success": true}).
+        """
+        payload = {
+            "recipient_email": recipient_email,
+            "subject": subject,
+            "message": message,
+            "mark_as_open": mark_as_open,
+            "attach_pdf": attach_pdf,
+        }
+        response = self.client.post(f"/2.0/kb_invoice/{invoice_id}/send", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        return {"success": True}
+
+    def get_user(self, user_id: int) -> dict[str, Any]:
+        """Get a single user by ID.
+
+        Args:
+            user_id: The Bexio user ID.
+
+        Returns:
+            User payload as dictionary.
+        """
+        response = self.client.get(f"/3.0/users/{user_id}")
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, dict):
+            return data
+        return {}
+
     def get_invoices_with_api_reference(
         self,
         *,

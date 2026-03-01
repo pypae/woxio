@@ -30,7 +30,7 @@ def sync_invoices_handler(request: Any) -> tuple[dict[str, Any], int]:
 
 
 def issue_invoices_handler(request: Any) -> tuple[dict[str, Any], int]:
-    """HTTP Cloud Function entry point for issuing draft invoices."""
+    """HTTP Cloud Function entry point for sending draft invoices."""
     del request  # Request body is currently unused for scheduled execution.
     try:
         config = Config.from_env()
@@ -40,5 +40,5 @@ def issue_invoices_handler(request: Any) -> tuple[dict[str, Any], int]:
         logger.error(f"Configuration error: {e}")
         return {"status": "error", "message": str(e)}, 500
     except Exception as e:
-        logger.exception("Unexpected error during invoice issue job")
+        logger.exception("Unexpected error during invoice send job")
         return {"status": "error", "message": str(e)}, 500

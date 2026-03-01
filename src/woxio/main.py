@@ -94,8 +94,32 @@ def sync_invoices(config: Config) -> dict[str, Any]:
     }
 
 
+def _build_invoice_email_message(
+    *,
+    full_name: str,
+    valid_from: str,
+    total: str,
+    valid_to: str,
+) -> str:
+    """Build the invoice email message body required by the business."""
+    return (
+        f"Guten Tag {full_name}\n\n"
+        "Wir danken für Ihren Auftrag und berechnen unsere Leistungen wie folgt:\n\n"
+        f"Datum: {valid_from}\n"
+        f"Betrag: {total}\n"
+        f"Zahlbar bis: {valid_to}\n\n"
+        "Unter folgendem Link können Sie die Rechnung ansehen und bezahlen:\n"
+        "[Network Link]\n\n"
+        "Wir bitten um Bezahlung über eine der zur Verfügung stehenden Zahlungsmöglichkeiten.\n"
+        "Für Rückfragen zu dieser Rechnung stehen wir jederzeit gerne zur Verfügung.\n\n"
+        "Freundliche Grüsse\n\n"
+        "Port 3\n"
+        "CF Sports GmbH"
+    )
+
+
 def issue_synced_invoices(config: Config) -> dict[str, Any]:
-    """Issue Woxio-created draft invoices in Bexio.
+    """Send Woxio-created draft invoices in Bexio by email.
 
     Only invoices with a non-empty api_reference are considered, which identifies
     invoices created by this integration.
@@ -104,19 +128,20 @@ def issue_synced_invoices(config: Config) -> dict[str, Any]:
         config: Application configuration.
 
     Returns:
-        Summary of issue operation.
+        Summary of send operation.
     """
-    issued_count = 0
+    sent_count = 0
     skipped_count = 0
     error_count = 0
     errors: list[str] = []
     issue_from_cutoff_date = datetime.now(UTC).date()
+    contact_cache: dict[int, Any] = {}
 
     with BexioClient(config.bexio) as bexio:
         invoices = bexio.get_invoices_with_api_reference()
         logger.info(
             f"Found {len(invoices)} Woxio-linked invoices in Bexio "
-            f"(issuing when valid_from <= {issue_from_cutoff_date.isoformat()})"
+            f"(sending when valid_from <= {issue_from_cutoff_date.isoformat()})"
         )
 
         for invoice in invoices:
@@ -154,39 +179,79 @@ def issue_synced_invoices(config: Config) -> dict[str, Any]:
                 skipped_count += 1
                 continue
 
+            if invoice.is_valid_to is None:
+                logger.info(f"Skipping invoice {invoice.id} without valid_to date")
+                skipped_count += 1
+                continue
+
+            if invoice.total is None:
+                logger.info(f"Skipping invoice {invoice.id} without total")
+                skipped_count += 1
+                continue
+
             try:
-                result = bexio.issue_invoice(invoice.id)
+                if invoice.contact_id not in contact_cache:
+                    contact_cache[invoice.contact_id] = bexio.get_contact(invoice.contact_id)
+                contact = contact_cache[invoice.contact_id]
+
+                recipient_email = (contact.mail or "").strip()
+                if not recipient_email:
+                    logger.info(
+                        f"Skipping invoice {invoice.id} due to missing contact email "
+                        f"(contact_id={invoice.contact_id})"
+                    )
+                    skipped_count += 1
+                    continue
+
+                full_name = (contact.name or "").strip()
+                if not full_name:
+                    full_name = recipient_email
+
+                message = _build_invoice_email_message(
+                    full_name=full_name,
+                    valid_from=invoice.is_valid_from.isoformat(),
+                    total=f"{invoice.total:.2f}",
+                    valid_to=invoice.is_valid_to.isoformat(),
+                )
+
+                result = bexio.send_invoice(
+                    invoice.id,
+                    recipient_email=recipient_email,
+                    subject="Rechnung - Port 3",
+                    message=message,
+                    mark_as_open=True,
+                    attach_pdf=True,
+                )
                 if result.get("success", False):
-                    issued_count += 1
-                    logger.info(f"Issued Bexio invoice {invoice.id} ({invoice_ref})")
+                    sent_count += 1
+                    logger.info(f"Sent Bexio invoice {invoice.id} ({invoice_ref})")
                 else:
-                    # Treat non-success issue responses as skip to avoid retries on non-drafts
                     skipped_count += 1
                     logger.warning(
-                        f"Issue call returned non-success for invoice {invoice.id}: {result}"
+                        f"Send call returned non-success for invoice {invoice.id}: {result}"
                     )
             except httpx.HTTPStatusError as e:
                 status_code = e.response.status_code
                 if status_code in (400, 422):
                     skipped_count += 1
                     logger.info(
-                        f"Skipping invoice {invoice.id} due to non-issueable status "
+                        f"Skipping invoice {invoice.id} due to non-sendable status "
                         f"(HTTP {status_code})"
                     )
                 else:
                     error_count += 1
                     message = f"{invoice_ref}: HTTP {status_code}"
                     errors.append(message)
-                    logger.error(f"Error issuing invoice {invoice.id}: {e}")
+                    logger.error(f"Error sending invoice {invoice.id}: {e}")
             except Exception as e:
                 error_count += 1
                 message = f"{invoice_ref}: {str(e)}"
                 errors.append(message)
-                logger.error(f"Error issuing invoice {invoice.id}: {e}")
+                logger.error(f"Error sending invoice {invoice.id}: {e}")
 
     return {
         "status": "completed",
-        "issued": issued_count,
+        "sent": sent_count,
         "skipped": skipped_count,
         "errors": error_count,
         "error_details": errors,
@@ -194,7 +259,7 @@ def issue_synced_invoices(config: Config) -> dict[str, Any]:
 
 
 def main() -> None:
-    """Run sync or issue locally for development/testing."""
+    """Run sync or send workflow locally for development/testing."""
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -207,8 +272,8 @@ def main() -> None:
     config = Config.from_env()
     if mode == "issue":
         result = issue_synced_invoices(config)
-        print("Issue completed:")
-        print(f"  Issued: {result['issued']}")
+        print("Send completed:")
+        print(f"  Sent: {result['sent']}")
     else:
         result = sync_invoices(config)
         print("Sync completed:")
